@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">TTSTRAINER Demo</string>
+    <string name="model_status_loading">正在加载模型资源…</string>
+    <string name="model_status_ready">模型已就绪</string>
+    <string name="profile_label">语言与音色</string>
+    <string name="sample_label">冻结前端测试句</string>
+    <string name="text_label">要合成的普通文本</string>
+    <string name="synthesize">合成并播放</string>
+    <string name="stop">停止播放</string>
+    <string name="save_wav">保存最近合成 WAV</string>
+    <string name="no_model_title">缺少模型资源</string>
+    <string name="no_model_message">请使用 preset=&quot;mobile_routed&quot;（中日韩推荐）或 preset=&quot;mobile&quot; 训练，并用 scripts/install_model.sh 安装导出包。</string>
+</resources>

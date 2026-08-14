@@ -1,0 +1,7 @@
+Copy the complete TTSTRAINER composable export to:
+将 TTSTRAINER 导出的完整 composable 目录复制到：
+
+app/src/main/assets/tts/composable/
+
+The SDK AAR is already included in app/libs; no SDK source is required.
+SDK AAR 已位于 app/libs，不需要复制任何 SDK 源码。

@@ -1,0 +1,8 @@
+/build
+# The public SDK AAR is intentionally versioned with this Demo.
+# 公开 SDK AAR 会随 Demo 一起提交。
+!/libs/tts-android-sdk.aar
+/src/main/jniLibs/armeabi-v7a/libonnxruntime.so
+/src/main/jniLibs/armeabi-v7a/libonnxruntime.so.strict-alignment-version
+/src/main/assets/tts/*
+!/src/main/assets/tts/PLACE_MODEL_FILES_HERE.txt

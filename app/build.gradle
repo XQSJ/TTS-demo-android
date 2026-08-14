@@ -1,0 +1,65 @@
+plugins {
+    alias(libs.plugins.android.application)
+}
+
+android {
+    namespace 'com.example.ttsdemo'
+    ndkVersion '29.0.13113456'
+    compileSdk {
+        version = release(36) {
+            minorApiLevel = 1
+        }
+    }
+
+    defaultConfig {
+        applicationId "com.example.ttsdemo"
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            // Product targets: ARMv8 64-bit and legacy ARMv7 32-bit.
+            // 产品同时支持 ARMv8 64 位与 ARMv7 32 位。
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    androidResources {
+        noCompress += ['onnx']
+    }
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a'
+            universalApk true
+        }
+    }
+}
+
+dependencies {
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.appcompat
+    implementation libs.material
+    implementation files('libs/tts-android-sdk.aar')
+    implementation libs.kotlin.stdlib
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
+    testImplementation libs.junit
+    // Android's org.json classes are stubs in local JVM tests.
+    // 本地 JVM 测试使用真实 JSON 实现，避免 Android stub 抛异常。
+    testImplementation 'org.json:json:20240303'
+    androidTestImplementation libs.androidx.junit
+    androidTestImplementation libs.androidx.espresso.core
+}
