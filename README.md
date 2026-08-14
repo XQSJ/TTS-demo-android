@@ -6,7 +6,7 @@
 - 多语言模型、语言包和音色包
 - `arm64-v8a` 与 `armeabi-v7a`
 - 从 Android `assets` 自动加载模型
-- 通过一个 AAR 快速接入现有项目
+- 核心 SDK 与文本前端按需组合
 
 ## 三步运行 Demo
 
@@ -64,26 +64,170 @@ Demo 支持 `arm64-v8a` 和 `armeabi-v7a`。没有安装模型时 App 可以启�
 
 ## 接入自己的 Android 项目
 
-将本项目中的：
+### 先确认模型需要哪些前端
+
+不要按语言名称猜测依赖。打开导出模型中每个语言的：
 
 ```text
-app/libs/tts-android-sdk.aar
+composable/languages/<语言代码>/manifest.json
+```
+
+查看：
+
+```json
+{
+  "frontend": {
+    "provider": "piper-plus-g2p"
+  }
+}
+```
+
+也可以在 macOS/Linux 中一次列出：
+
+```bash
+grep -R '"provider"' composable/languages/*/manifest.json
+```
+
+根据出现过的 provider 选择模块：
+
+| provider | 复制到 `app/libs/` | Gradle 上游依赖 |
+|---|---|---|
+| 所有模型 | `tts-sdk-core.aar` | ONNX Runtime，见下文 ABI 选择 |
+| `espeak-ng` | `tts-frontend-espeak.aar` | 无额外 Maven 前端依赖 |
+| `piper-plus-g2p` | `tts-frontend-piper.aar` | Piper Plus、Kotlin、协程 |
+| `openjtalk` | `tts-frontend-openjtalk.aar` 和 `tts-frontend-piper.aar` | Piper Plus、Kotlin、协程 |
+
+同一个多语言模型只需把用到的 provider 各添加一次。例如中英日模型通常同时需要
+Piper、eSpeak 和 OpenJTalk；仅英文模型通常只需要 eSpeak。最终以语言包 manifest 为准。
+
+语言词典不在这些 AAR 中，而在模型资源中：
+
+```text
+composable/languages/<语言代码>/runtime/
+```
+
+所以复制了前端 AAR 以后，仍必须安装完整语言包，不能只复制 `model.onnx`。
+
+### 选择 ONNX Runtime
+
+二选一，不要同时添加：
+
+| 设备范围 | 使用方式 |
+|---|---|
+| 仅 `arm64-v8a` | Microsoft 官方 Maven 依赖 |
+| 同时支持 `armeabi-v7a` | 本项目的 `tts-runtime-ort-v7a.aar` |
+
+仅 ARM64：
+
+```gradle
+implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.20.0'
+```
+
+包含旧 ARMv7：
+
+```gradle
+implementation files('libs/tts-runtime-ort-v7a.aar')
+```
+
+`tts-runtime-ort-v7a.aar` 同时包含 ARM64 与兼容 ARMv7 运行库，因此使用它以后不要再
+添加 Microsoft ORT Maven AAR。
+
+### 复制需要的 AAR
+
+将本项目中需要的 XQSJ 模块复制到应用的 `app/libs/`：
+
+```text
+app/libs/tts-sdk-core.aar
+app/libs/tts-frontend-espeak.aar       # 模型使用 espeak-ng 时
+app/libs/tts-frontend-piper.aar        # 模型使用 piper-plus-g2p 时
+app/libs/tts-frontend-openjtalk.aar    # 模型使用 openjtalk 时
 ```
 
 到你的项目：
 
 ```text
-your-app/app/libs/tts-android-sdk.aar
+your-app/app/libs/
 ```
 
-在 `app/build.gradle` 中添加：
+### 配置 Gradle
+
+以下是“ARM64 + eSpeak + Piper + OpenJTalk”的完整示例：
 
 ```gradle
 dependencies {
-    implementation files('libs/tts-android-sdk.aar')
+    implementation files('libs/tts-sdk-core.aar')
+
+    // 根据 composable/manifest.json 按需添加
+    implementation files('libs/tts-frontend-espeak.aar')
+    implementation files('libs/tts-frontend-piper.aar')
+    implementation files('libs/tts-frontend-openjtalk.aar')
+
+    // 仅 ARM64：使用 Microsoft 官方 ORT
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.20.0'
+
+    // 仅 Piper/OpenJTalk 前端需要
+    implementation 'io.github.ayutaz:piper-plus-g2p-android:1.0.0'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
 }
+
+android {
+    defaultConfig {
+        ndk { abiFilters 'arm64-v8a' }
+    }
+
+    // Piper Plus 上游 AAR 也携带 libonnxruntime.so。
+    // 明确让应用选择前面声明的 ORT，避免重复 Native 文件。
+    packaging {
+        jniLibs { pickFirsts += ['**/libonnxruntime.so'] }
+    }
+}
+```
+
+如果模型没有 Piper/OpenJTalk，不要添加 Piper Plus、Kotlin、协程以及对应的
+`pickFirsts`。如果需要 ARMv7，则把 Microsoft ORT 那一行换成：
+
+```gradle
+implementation files('libs/tts-runtime-ort-v7a.aar')
+```
+
+并把 ABI 改为：
+
+```gradle
+ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
+```
+
+### 常见组合
+
+仅 eSpeak 模型、只支持 ARM64：
+
+```gradle
+implementation files('libs/tts-sdk-core.aar')
+implementation files('libs/tts-frontend-espeak.aar')
+implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.20.0'
+```
+
+Piper 中文模型、只支持 ARM64：
+
+```gradle
+implementation files('libs/tts-sdk-core.aar')
+implementation files('libs/tts-frontend-piper.aar')
+implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.20.0'
+implementation 'io.github.ayutaz:piper-plus-g2p-android:1.0.0'
+implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.0'
+implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
+```
+
+OpenJTalk 日语模型必须同时添加 Piper 适配器：
+
+```gradle
+implementation files('libs/tts-sdk-core.aar')
+implementation files('libs/tts-frontend-piper.aar')
+implementation files('libs/tts-frontend-openjtalk.aar')
+implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.20.0'
+implementation 'io.github.ayutaz:piper-plus-g2p-android:1.0.0'
+implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.0'
+implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
 ```
 
 然后将 TTSTRAINER 导出的完整模型放入：
@@ -129,25 +273,24 @@ worker.execute(() -> {
 应用应通过 `manifest.json` 识别模型能力。增加或删除语言、替换音色时，应安装或
 移除对应资源包并同步更新清单，不要直接修改 ONNX 输入编号。
 
-## AAR 包含内容
+## AAR 模块说明
 
-`tts-android-sdk.aar` 已整合：
+| AAR | 内容 | 是否必需 |
+|---|---|---|
+| `tts-sdk-core.aar` | `com.xqsj.tts` API、模型和资源包管理 | 必需 |
+| `tts-frontend-espeak.aar` | eSpeak 训练兼容适配器 | 按模型 |
+| `tts-frontend-piper.aar` | Piper Plus 训练兼容适配器 | 按模型 |
+| `tts-frontend-openjtalk.aar` | OpenJTalk 基础音素适配器 | 按模型 |
+| `tts-runtime-ort-v7a.aar` | ARM64 + 旧 ARMv7 兼容 ORT | 仅兼容旧设备时 |
 
-- 公共 Java API：`com.xqsj.tts`
-- ONNX Runtime 1.20
-- Piper Plus G2P
-- eSpeak NG
-- OpenJTalk JNI
-- ARM64 和 ARMv7 原生运行库
-- ARMv7 严格对齐修复
-
-不需要复制 C/C++ 源码，也不需要配置 `pickFirst`。
+Piper Plus、Kotlin 和协程由 Gradle 从上游仓库解析，不属于本项目源码。无需复制任何
+C/C++ 文件到业务项目。
 
 模型主体、语言资源和音色包不包含在 AAR 中，由 TTSTRAINER 导出并按产品需要安装。
 
 ## 使用要求
 
-- Android 7.0（API 24）或更高版本
+- Android 8.0（API 26）或更高版本
 - Java 8 或更高版本
 - 模型必须由兼容版本的 TTSTRAINER 导出
 - 合成操作必须放在后台线程，不能阻塞 UI 线程
@@ -172,7 +315,20 @@ app/src/main/assets/tts/composable/manifest.json
 
 ### ARMv7 设备启动失败
 
-确认 App 没有在打包阶段过滤 `armeabi-v7a`，并检查最终 APK 中是否包含对应 `.so`。
+确认使用的是 `tts-runtime-ort-v7a.aar`，而不是 Microsoft 官方 ORT AAR；确认 App
+没有过滤 `armeabi-v7a`，并检查最终 APK 中是否包含对应 `.so`。
+
+### 提示重复的 libonnxruntime.so
+
+Piper Plus 上游 AAR 自带 ORT Native 库。按上面的示例添加：
+
+```gradle
+packaging {
+    jniLibs { pickFirsts += ['**/libonnxruntime.so'] }
+}
+```
+
+同时确认 Microsoft ORT 和 `tts-runtime-ort-v7a.aar` 没有一起添加。
 
 ### 如何缩小安装包
 
