@@ -39,14 +39,6 @@ android {
     androidResources {
         noCompress += ['onnx']
     }
-    packaging {
-        jniLibs {
-            // Piper Plus upstream also packages libonnxruntime.so. The Demo's
-            // explicit compatibility runtime must win for legacy ARMv7.
-            // Piper Plus 上游也携带 ORT；Demo 明确选择旧 ARMv7 兼容版本。
-            pickFirsts += ['**/libonnxruntime.so']
-        }
-    }
     splits {
         abi {
             enable true
@@ -65,18 +57,15 @@ dependencies {
     // required by the exported model manifest.
     // XQSJ 模块显式拆分；按模型 manifest 只加入实际需要的前端 AAR。
     implementation files('libs/tts-sdk-core.aar')
-    implementation files('libs/tts-frontend-espeak.aar')
     implementation files('libs/tts-frontend-piper.aar')
     implementation files('libs/tts-frontend-openjtalk.aar')
 
-    // Demo supports legacy ARMv7, so it uses the clearly separated ORT
-    // compatibility package. ARM64-only apps should use Microsoft's official
-    // Maven dependency instead (documented in README).
-    implementation files('libs/tts-runtime-ort-v7a.aar')
-
-    // Upstream Piper Plus remains an ordinary Gradle dependency and is not
-    // copied into our source tree or frontend AAR.
-    implementation 'io.github.ayutaz:piper-plus-g2p-android:1.0.0'
+    // ONNX Runtime 1.22 is supplied by Microsoft's official Maven package;
+    // the Piper frontend AAR bundles native libs relinked against it and does
+    // not carry its own ORT copy.
+    // ONNX Runtime 1.22 由微软官方 Maven 包提供；Piper 前端 AAR 内置
+    // 重链接到该版本的原生库，不再自带 ORT。
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.22.0'
     implementation libs.kotlin.stdlib
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
     testImplementation libs.junit
