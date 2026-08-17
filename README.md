@@ -95,14 +95,17 @@ grep -R '"provider"' composable/languages/*/manifest.json
 | 所有模型 | `tts-sdk-core.aar` | ONNX Runtime 1.22（官方 Maven 包） |
 | `piper-plus-g2p` | `tts-frontend-piper.aar` | Kotlin、协程 |
 | `openjtalk` | `tts-frontend-openjtalk.aar` 和 `tts-frontend-piper.aar` | Kotlin、协程 |
+| `espeak-ng`（旧模型兼容） | `tts-frontend-espeak.aar` | 无 |
 
 同一个多语言模型只需把用到的 provider 各添加一次。`tts-frontend-piper.aar`
 已内置 Piper Plus 的 Java 类与重链接到 ONNX Runtime 1.22 的原生库，
 `openjtalk` 复用同一份原生库。
 
-`espeak-ng` 前端已在本版本移除：声明该 provider 的旧语言包（如本 Demo
-内置的英文包）会得到“尚未接入前端 provider”的明确报错，等待训练侧导出
-Piper 前端的英文模型后替换。
+`espeak-ng` 前端只为兼容旧语言包（如本 Demo 内置的英文包）保留，后续新
+模型不再使用。它是 GPLv3 eSpeak NG 代码的唯一载体：不需要旧模型兼容时，
+删除 `tts-frontend-espeak.aar` 及其一行依赖即可彻底解除 GPL 义务，其余
+AAR 与核心库均不含 eSpeak 代码（核心通过反射装载前端，缺失时报
+“缺少前端模块”的明确错误）。
 
 语言词典不在这些 AAR 中，而在模型资源中：
 
@@ -153,6 +156,7 @@ android {
 app/libs/tts-sdk-core.aar
 app/libs/tts-frontend-piper.aar        # 模型使用 piper-plus-g2p 时
 app/libs/tts-frontend-openjtalk.aar    # 模型使用 openjtalk 时
+app/libs/tts-frontend-espeak.aar       # 兼容旧 espeak-ng 语言包时（GPLv3，可选）
 app/libs/tts-runtime-ort-v7a.aar       # 需兼容旧 ARMv7 真机时
 ```
 
@@ -173,6 +177,8 @@ dependencies {
     // 根据 composable/manifest.json 按需添加
     implementation files('libs/tts-frontend-piper.aar')
     implementation files('libs/tts-frontend-openjtalk.aar')
+    // 旧 espeak-ng 语言包兼容，可选（不删也不影响新模型）
+    implementation files('libs/tts-frontend-espeak.aar')
 
     // ONNX Runtime 1.22（arm64-v8a 与 armeabi-v7a）
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.22.0'

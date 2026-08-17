@@ -68,6 +68,15 @@ dependencies {
     implementation files('libs/tts-frontend-piper.aar')
     implementation files('libs/tts-frontend-openjtalk.aar')
 
+    // Legacy-model compatibility only (espeak-ng language packs). This AAR is
+    // the sole carrier of GPLv3 eSpeak NG code; deleting it plus this one
+    // dependency line removes the GPL obligation entirely — the core resolves
+    // frontends via reflection and nothing else references it.
+    // 仅为兼容旧 espeak-ng 语言包。GPLv3 的 eSpeak NG 代码只存在于本 AAR；
+    // 删除此 AAR 与这一行依赖即可彻底解除 GPL 义务，core 通过反射装载前端，
+    // 其余模块均不引用它。
+    implementation files('libs/tts-frontend-espeak.aar')
+
     // ONNX Runtime 1.22 is supplied by Microsoft's official Maven package;
     // the Piper frontend AAR bundles native libs relinked against it and does
     // not carry its own ORT copy. The official v7a .so still performs
