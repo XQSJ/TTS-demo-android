@@ -121,9 +121,29 @@ composable/languages/<语言代码>/runtime/
 implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.22.0'
 ```
 
-不再提供单独的 `tts-runtime-ort-v7a.aar`；Piper 前端原生库已重链接为仅依赖
-外部 `libonnxruntime.so`（符号版本 `VERS_1.22.0`），动态链接器会强制版本匹配，
-不会误绑旧版运行库。
+Piper 前端原生库已重链接为仅依赖外部 `libonnxruntime.so`（符号版本
+`VERS_1.22.0`），动态链接器会强制版本匹配，不会误绑旧版运行库。
+
+### 旧 ARMv7 真机 SIGBUS 兼容包
+
+官方 1.22 的 `armeabi-v7a` 库在加载模型时仍会对未对齐地址做双字读取，
+严格对齐的旧 ARMv7 真机会直接 SIGBUS（上游修复要到 ORT 1.23）。需要兼容
+这类设备时，额外引入本项目重新构建的严格对齐覆盖包 `tts-runtime-ort-v7a.aar`：
+
+```gradle
+implementation files('libs/tts-runtime-ort-v7a.aar')
+
+android {
+    packaging {
+        jniLibs { pickFirsts += ['**/libonnxruntime.so'] }
+    }
+}
+```
+
+覆盖包只含一份自建 v7a `libonnxruntime.so`（脚本 `setup_ort_v7a.sh` 以
+`-mno-unaligned-access` 加对齐补丁构建），arm64 仍使用官方库。强烈建议
+照搬本 Demo 的 `verifyV7aOrtOverride` 任务，在打包后校验 v7a 命中的是
+严格对齐版本，避免 pickFirsts 静默选错。
 
 ### 复制需要的 AAR
 
@@ -133,6 +153,7 @@ implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.22.0'
 app/libs/tts-sdk-core.aar
 app/libs/tts-frontend-piper.aar        # 模型使用 piper-plus-g2p 时
 app/libs/tts-frontend-openjtalk.aar    # 模型使用 openjtalk 时
+app/libs/tts-runtime-ort-v7a.aar       # 需兼容旧 ARMv7 真机时
 ```
 
 到你的项目：
@@ -272,10 +293,11 @@ app/src/main/assets/tts/composable/manifest.json
 不要只复制 ONNX 文件。重新复制完整 `composable` 目录，确保 `languages/` 和
 `manifest.json` 来自同一次导出。
 
-### ARMv7 设备启动失败
+### ARMv7 设备启动失败 / 加载模型即闪退
 
-确认 App 没有过滤 `armeabi-v7a`，并检查最终 APK 中是否包含对应 `.so`。
-ONNX Runtime 1.22 官方 Maven 包本身覆盖两种 ARM ABI。
+确认 App 没有过滤 `armeabi-v7a`；若闪退日志包含 `SIGBUS`/`BUS_ADRALN`，
+说明打包进了官方 v7a 库 —— 引入 `tts-runtime-ort-v7a.aar` 覆盖包并配置
+`pickFirsts`，再用 `verifyV7aOrtOverride` 任务确认命中覆盖版本。
 
 ### 提示尚未接入前端 provider
 

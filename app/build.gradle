@@ -39,6 +39,14 @@ android {
     androidResources {
         noCompress += ['onnx']
     }
+    packaging {
+        jniLibs {
+            // The strict-alignment v7a runtime must win over the official
+            // Maven ORT copy for legacy ARMv7 devices.
+            // 旧 ARMv7 设备必须命中严格对齐运行库而不是官方 Maven 副本。
+            pickFirsts += ['**/libonnxruntime.so']
+        }
+    }
     splits {
         abi {
             enable true
@@ -62,10 +70,16 @@ dependencies {
 
     // ONNX Runtime 1.22 is supplied by Microsoft's official Maven package;
     // the Piper frontend AAR bundles native libs relinked against it and does
-    // not carry its own ORT copy.
+    // not carry its own ORT copy. The official v7a .so still performs
+    // unaligned scalar reads that SIGBUS on strict-alignment ARMv7 devices
+    // (fixed upstream only in ORT 1.23), so the strict-alignment override
+    // below replaces the v7a copy at packaging time.
     // ONNX Runtime 1.22 由微软官方 Maven 包提供；Piper 前端 AAR 内置
-    // 重链接到该版本的原生库，不再自带 ORT。
+    // 重链接到该版本的原生库，不再自带 ORT。官方 v7a 库仍存在未对齐标量
+    // 读取，严格对齐的旧 ARMv7 真机会 SIGBUS（上游要到 ORT 1.23 才修复），
+    // 因此下方严格对齐覆盖包会在打包时替换 v7a 那份库。
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.22.0'
+    implementation files('libs/tts-runtime-ort-v7a.aar')
     implementation libs.kotlin.stdlib
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
     testImplementation libs.junit
@@ -74,4 +88,59 @@ dependencies {
     testImplementation 'org.json:json:20240303'
     androidTestImplementation libs.androidx.junit
     androidTestImplementation libs.androidx.espresso.core
+}
+
+// Never produce a debug APK that silently falls back to the crashing official
+// v7a copy. Compare the packaged v7a runtime with the one inside the
+// strict-alignment AAR.
+// 禁止生成悄悄回退到会崩溃的官方 v7a 副本的 debug APK：将打包结果与
+// 严格对齐 AAR 内的运行库逐一比对。
+tasks.register('verifyV7aOrtOverride') {
+    group = 'verification'
+    description = 'Verify that the strict-alignment armeabi-v7a ONNX Runtime is packaged.'
+    dependsOn 'mergeDebugNativeLibs'
+    doLast {
+        def aar = file('libs/tts-runtime-ort-v7a.aar')
+        if (!aar.isFile()) {
+            throw new GradleException(
+                    'Missing libs/tts-runtime-ort-v7a.aar. Build it with ' +
+                    'the SDK: ./gradlew :tts-runtime-ort-v7a:exportRuntime')
+        }
+        def sha256Hex = { InputStream input ->
+            def digest = java.security.MessageDigest.getInstance('SHA-256')
+            byte[] buffer = new byte[1024 * 1024]
+            for (int read = input.read(buffer); read >= 0; read = input.read(buffer)) {
+                if (read > 0) digest.update(buffer, 0, read)
+            }
+            digest.digest().encodeHex().toString()
+        }
+        def zip = new java.util.zip.ZipFile(aar)
+        def entry = zip.getEntry('jni/armeabi-v7a/libonnxruntime.so')
+        if (entry == null) {
+            zip.close()
+            throw new GradleException(
+                    'tts-runtime-ort-v7a.aar lacks jni/armeabi-v7a/libonnxruntime.so')
+        }
+        String expected
+        zip.withCloseable { expected = sha256Hex(zip.getInputStream(entry)) }
+        def packaged = layout.buildDirectory.file(
+                'intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib/' +
+                'armeabi-v7a/libonnxruntime.so').get().asFile
+        if (!packaged.isFile()) {
+            throw new GradleException(
+                    "Merged armeabi-v7a libonnxruntime.so was not found: ${packaged}")
+        }
+        def actual = packaged.withInputStream { sha256Hex(it) }
+        if (actual != expected) {
+            throw new GradleException(
+                    'Merged armeabi-v7a libonnxruntime.so is not the strict-alignment build.')
+        }
+        logger.lifecycle("Verified strict-alignment v7a ONNX Runtime: ${packaged}")
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == 'assembleDebug') {
+        task.finalizedBy 'verifyV7aOrtOverride'
+    }
 }
